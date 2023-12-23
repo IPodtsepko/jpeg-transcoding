@@ -1,0 +1,8 @@
+# The C and C++ build directory
+bin
+
+# A folder with images for decoding
+images
+
+# A folder with decoding output
+out

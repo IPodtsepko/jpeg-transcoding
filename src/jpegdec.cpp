@@ -681,7 +681,13 @@ NJ_INLINE void njDecodeBlock(nj_component_t* c, unsigned char* out)
         if (coef > 63) njThrow(NJ_SYNTAX_ERROR);
         nj.block[(int) njZZ[coef]] = value * nj.qtab[c->qtsel][coef];
     }
+
     while (coef < 63);
+    for (coef = 0; coef < 64; coef += 1)
+    {
+        printf(coef == 0? "%d" : ",%d", nj.block[coef]);
+    }
+    printf("\n");
 
     for (coef = 0; coef < 64; coef += 8)
     {

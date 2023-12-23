@@ -2,7 +2,8 @@
 
 A research project on the topic "Transcoding JPEG images using prediction of DCT coefficients based on a neural network". Repository structure:
 - `src/gpegdec.cpp` - the source code of the JPEG decoder;
-- `Makefile` - makefile containing declarations for building the project.
+- `Makefile` - makefile containing declarations for building the project;
+- `models/model.ipynb` - the Jupiter notebook in which the DCT coefficients are processed.
 
 ## Usage
 

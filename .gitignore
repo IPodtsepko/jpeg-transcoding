@@ -1,0 +1,18 @@
+# The C and C++ build directory and files
+build
+
+# A folder with images for decoding
+images
+validation
+
+# A folder with decoding output
+out
+
+# CMake temporary files
+CMakeLists.txt.user
+
+# macOS filesystem
+.DS_Store
+
+# Python
+**/__pycache__/

@@ -1,0 +1,7 @@
+numpy
+pytorch
+torchvision
+scikit-learn
+torch_dct
+cffi
+matplotlib

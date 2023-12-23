@@ -1,0 +1,6 @@
+[submodule "libs/args"]
+	path = libs/args
+	url = git@github.com:Taywee/args.git
+[submodule "libs/fmt"]
+	path = libs/fmt
+	url = git@github.com:fmtlib/fmt.git

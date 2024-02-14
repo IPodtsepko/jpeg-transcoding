@@ -110,15 +110,12 @@
 #include <decoder/dct_coefficients_filter.hpp>
 #include <fstream>
 #include <iostream>
-#include <sstream>
+#include <utils/discrete_cosine_transform.hpp>
 #include <utils/huffman.hpp>
 #include <utils/output.hpp>
 #include <vector>
 
 #define _CRT_SECURE_NO_WARNINGS
-
-#ifndef _NANOJPEG_H
-#define _NANOJPEG_H
 
 /**
  * @brief Results for JPEG decoding.
@@ -134,9 +131,6 @@ enum class DecodingResult
     /// Unsupported format.
     UNSUPPORTED,
 
-    /// Out of memory error.
-    OUT_OF_MEMORY,
-
     /// Internal application error.
     INTERNAL_ERROR,
 
@@ -146,8 +140,6 @@ enum class DecodingResult
     /// Internal result, will never be reported.
     __FINISHED,
 };
-
-#endif //_NANOJPEG_H
 
 ///////////////////////////////////////////////////////////////////////////////
 // CONFIGURATION SECTION                                                     //
@@ -185,42 +177,6 @@ enum class DecodingResult
 #define NJ_FORCE_INLINE static inline
 #endif
 
-#if NJ_USE_LIBC
-#include <stdlib.h>
-#include <string.h>
-#define njAllocMem malloc
-#define njFreeMem free
-#define njFillMem memset
-#define njCopyMem memcpy
-#elif NJ_USE_WIN32
-#include <windows.h>
-#define njAllocMem(size) ((void *)LocalAlloc(LMEM_FIXED, (SIZE_T)(size)))
-#define njFreeMem(block) ((void)LocalFree((HLOCAL)block))
-NJ_INLINE void njFillMem(void * block, unsigned char value, int count)
-{
-    __asm {
-        mov edi, block
-        mov al, value
-        mov ecx, count
-        rep stosb
-    }
-}
-NJ_INLINE void njCopyMem(void * dest, const void * src, int count)
-{
-    __asm {
-        mov edi, dest
-        mov esi, src
-        mov ecx, count
-        rep movsb
-    }
-}
-#else
-extern void * njAllocMem(int size);
-extern void njFreeMem(void * block);
-extern void njFillMem(void * block, unsigned char byte, int size);
-extern void njCopyMem(void * dest, const void * src, int size);
-#endif
-
 // clang-format off
 static const int ZIGZAG_ORDER[64] = {
         0,  1,  8,  16, 9,  2,  3,  10,
@@ -237,16 +193,11 @@ static const int ZIGZAG_ORDER[64] = {
 struct Decoder
 {
 
-    Decoder()
-    {
-        initialize();
-    }
+    Decoder() = default;
 
     void set_dct_filter(const std::size_t dct_filter_power)
     {
         m_dct_filter_power = dct_filter_power;
-        std::cout << "Use DCT filter: " << m_dct_filter_power << '\n';
-
     }
 
     struct HuffmanCodeEntry
@@ -257,44 +208,44 @@ struct Decoder
 
     struct Component
     {
-        int m_id;
-        int m_ssx;
-        int m_ssy;
-        int m_width;
-        int m_height;
-        int m_stride;
-        int m_quantization_table_id;
-        int m_ac_huffman_table_id;
-        int m_dc_huffman_table_id;
-        int m_last_dc;
-        std::vector<unsigned char> m_pixels;
+        int m_id = 0;
+        int m_ssx = 0;
+        int m_ssy = 0;
+        int m_width = 0;
+        int m_height = 0;
+        int m_stride = 0;
+        int m_quantization_table_id = 0;
+        int m_ac_huffman_table_id = 0;
+        int m_dc_huffman_table_id = 0;
+        int m_last_dc = 0;
+        BytesList m_pixels{};
     };
 
-    DecodingResult m_error;
-    const unsigned char * m_position;
-    int m_size;
-    int m_length;
-    int m_width;
-    int m_height;
-    int mbwidth;
-    int mbheight;
-    int mbsizex;
-    int mbsizey;
-    int m_components_count;
-    std::array<Component, 3> m_components;
-    int qtused;
-    int qtavail;
+    DecodingResult m_error = DecodingResult::OK;
+    const unsigned char * m_position = nullptr;
+    int m_size = 0;
+    int m_length = 0;
+    int m_width = 0;
+    int m_height = 0;
+    int mbwidth = 0;
+    int mbheight = 0;
+    int mbsizex = 0;
+    int mbsizey = 0;
+    int m_components_count{};
+    std::array<Component, 3> m_components{};
+    int qtused = 0;
+    int qtavail = 0;
     unsigned char m_quantization_tables[4][64];
     HuffmanCodeEntry m_huffman_tables[4][65536];
-    int m_buffer;
-    int m_bits_in_buffer;
-    int rstinterval;
-    std::vector<unsigned char> rgb;
+    int m_buffer = 0;
+    int m_bits_in_buffer = 0;
+    int rstinterval = 0;
+    BytesList rgb{};
 
     std::size_t m_dct_filter_power = 0;
     unsigned short m_huffman_encoding_tables[4][256][2];
     bool m_is_scanning = false;
-    Output m_jpeg_output;
+    Output m_jpeg_output{};
 
     static unsigned char clip(const int x)
     {
@@ -305,102 +256,6 @@ struct Decoder
             return 0xFF;
         }
         return static_cast<unsigned char>(x);
-    }
-
-#define W1 2841
-#define W2 2676
-#define W3 2408
-#define W5 1609
-#define W6 1108
-#define W7 565
-
-    static void inversed_discrete_cosine_transform_by_rows(int * blk)
-    {
-        int x0, x1, x2, x3, x4, x5, x6, x7, x8;
-        if (!((x1 = blk[4] << 11) | (x2 = blk[6]) | (x3 = blk[2]) | (x4 = blk[1]) | (x5 = blk[7]) | (x6 = blk[5]) | (x7 = blk[3]))) {
-            blk[0] = blk[1] = blk[2] = blk[3] = blk[4] = blk[5] = blk[6] = blk[7] = blk[0] << 3;
-            return;
-        }
-        x0 = (blk[0] << 11) + 128;
-        x8 = W7 * (x4 + x5);
-        x4 = x8 + (W1 - W7) * x4;
-        x5 = x8 - (W1 + W7) * x5;
-        x8 = W3 * (x6 + x7);
-        x6 = x8 - (W3 - W5) * x6;
-        x7 = x8 - (W3 + W5) * x7;
-        x8 = x0 + x1;
-        x0 -= x1;
-        x1 = W6 * (x3 + x2);
-        x2 = x1 - (W2 + W6) * x2;
-        x3 = x1 + (W2 - W6) * x3;
-        x1 = x4 + x6;
-        x4 -= x6;
-        x6 = x5 + x7;
-        x5 -= x7;
-        x7 = x8 + x3;
-        x8 -= x3;
-        x3 = x0 + x2;
-        x0 -= x2;
-        x2 = (181 * (x4 + x5) + 128) >> 8;
-        x4 = (181 * (x4 - x5) + 128) >> 8;
-        blk[0] = (x7 + x1) >> 8;
-        blk[1] = (x3 + x2) >> 8;
-        blk[2] = (x0 + x4) >> 8;
-        blk[3] = (x8 + x6) >> 8;
-        blk[4] = (x8 - x6) >> 8;
-        blk[5] = (x0 - x4) >> 8;
-        blk[6] = (x3 - x2) >> 8;
-        blk[7] = (x7 - x1) >> 8;
-    }
-
-    static void inversed_discrete_cosine_transform_by_columns(const int * blk, unsigned char * out, int stride)
-    {
-        int x0, x1, x2, x3, x4, x5, x6, x7, x8;
-        if (!((x1 = blk[8 * 4] << 8) | (x2 = blk[8 * 6]) | (x3 = blk[8 * 2]) | (x4 = blk[8 * 1]) | (x5 = blk[8 * 7]) | (x6 = blk[8 * 5]) | (x7 = blk[8 * 3]))) {
-            x1 = clip(((blk[0] + 32) >> 6) + 128);
-            for (x0 = 8; x0; --x0) {
-                *out = (unsigned char)x1;
-                out += stride;
-            }
-            return;
-        }
-        x0 = (blk[0] << 8) + 8192;
-        x8 = W7 * (x4 + x5) + 4;
-        x4 = (x8 + (W1 - W7) * x4) >> 3;
-        x5 = (x8 - (W1 + W7) * x5) >> 3;
-        x8 = W3 * (x6 + x7) + 4;
-        x6 = (x8 - (W3 - W5) * x6) >> 3;
-        x7 = (x8 - (W3 + W5) * x7) >> 3;
-        x8 = x0 + x1;
-        x0 -= x1;
-        x1 = W6 * (x3 + x2) + 4;
-        x2 = (x1 - (W2 + W6) * x2) >> 3;
-        x3 = (x1 + (W2 - W6) * x3) >> 3;
-        x1 = x4 + x6;
-        x4 -= x6;
-        x6 = x5 + x7;
-        x5 -= x7;
-        x7 = x8 + x3;
-        x8 -= x3;
-        x3 = x0 + x2;
-        x0 -= x2;
-        x2 = (181 * (x4 + x5) + 128) >> 8;
-        x4 = (181 * (x4 - x5) + 128) >> 8;
-        *out = clip(((x7 + x1) >> 14) + 128);
-        out += stride;
-        *out = clip(((x3 + x2) >> 14) + 128);
-        out += stride;
-        *out = clip(((x0 + x4) >> 14) + 128);
-        out += stride;
-        *out = clip(((x8 + x6) >> 14) + 128);
-        out += stride;
-        *out = clip(((x8 - x6) >> 14) + 128);
-        out += stride;
-        *out = clip(((x0 - x4) >> 14) + 128);
-        out += stride;
-        *out = clip(((x3 - x2) >> 14) + 128);
-        out += stride;
-        *out = clip(((x7 - x1) >> 14) + 128);
     }
 
 #define handle_error(e) \
@@ -414,7 +269,7 @@ struct Decoder
             return;                        \
     } while (0)
 
-    unsigned char njUse(const std::size_t count = 1)
+    unsigned char use(const std::size_t count = 1)
     {
         const auto * begin = m_position;
         m_position += count;
@@ -438,17 +293,19 @@ struct Decoder
                 m_bits_in_buffer += 8;
                 continue;
             }
-            newbyte = njUse();
+            newbyte = use();
             m_bits_in_buffer += 8;
             m_buffer = (m_buffer << 8) | newbyte;
             if (newbyte == 0xFF) {
                 if (m_size) {
-                    const auto marker = njUse();
+                    const auto marker = use();
                     switch (marker) {
                     case 0x00:
                     case 0xFF:
                         break;
-                    case 0xD9: m_size = 0; break;
+                    case 0xD9:
+                        m_size = 0;
+                        break;
                     default:
                         if ((marker & 0xF8) != 0xD0)
                             m_error = DecodingResult::SYNTAX_ERROR;
@@ -480,14 +337,11 @@ struct Decoder
         return res;
     }
 
-    void byte_align(void)
-    {
-        m_bits_in_buffer &= 0xF8;
-    }
+    void byte_align(void) { m_bits_in_buffer &= 0xF8; }
 
     void skip(int count)
     {
-        njUse(count);
+        use(count);
         m_length -= count;
         if (m_size < 0)
             m_error = DecodingResult::SYNTAX_ERROR;
@@ -569,28 +423,27 @@ struct Decoder
             c.m_width = (m_width * c.m_ssx + ssxmax - 1) / ssxmax;
             c.m_height = (m_height * c.m_ssy + ssymax - 1) / ssymax;
             c.m_stride = mbwidth * c.m_ssx << 3;
-            if (((c.m_width < 3) && (c.m_ssx != ssxmax)) || ((c.m_height < 3) && (c.m_ssy != ssymax)))
+            if (((c.m_width < 3) && (c.m_ssx != ssxmax)) ||
+                ((c.m_height < 3) && (c.m_ssy != ssymax)))
                 handle_error(DecodingResult::UNSUPPORTED);
-            c.m_pixels = std::vector<unsigned char>(c.m_stride * mbheight * c.m_ssy << 3);
+            c.m_pixels = BytesList(c.m_stride * mbheight * c.m_ssy << 3);
         }
         if (m_components_count == 3) {
-            rgb = std::vector<unsigned char>(m_width * m_height * m_components_count);
+            rgb = BytesList(m_width * m_height * m_components_count);
         }
         skip(m_length);
     }
 
-    static void restore_huffman_codes(std::array<unsigned char, 17> spectrum,
-                                      std::vector<std::pair<unsigned short, unsigned short>> & to)
+    static void restore_huffman_codes(
+            Bytes<17> spectrum,
+            std::vector<std::pair<unsigned short, unsigned short>> & to)
     {
         const int initial_length = 0;
         const int initial_code = 0;
         restore_huffman_codes(spectrum, initial_length, initial_code, to);
     }
     static void restore_huffman_codes(
-            std::array<unsigned char, 17> & spectrum,
-            int length,
-            int code,
-            std::vector<std::pair<unsigned short, unsigned short>> & to)
+            Bytes<17> & spectrum, int length, int code, std::vector<std::pair<unsigned short, unsigned short>> & to)
     {
         if (length > 16) {
             return;
@@ -624,7 +477,7 @@ struct Decoder
                 handle_error(DecodingResult::UNSUPPORTED);
             }
             i = (i | (i >> 3)) & 3; // combined DC/AC + tableid value
-            static std::array<unsigned char, 17> counts;
+            static Bytes<17> counts;
             int total_codes_count = 0;
             for (int code_length = 1; code_length <= 16; ++code_length) {
                 const auto count = m_position[code_length];
@@ -743,15 +596,7 @@ struct Decoder
         return value;
     }
 
-    bool use_jpeg_output() const
-    {
-        static bool print = true;
-        if (print) {
-            print = false;
-            std::cout << "Use JPEG output: " << (m_dct_filter_power > 0) << " (m_dct_filter_power=" << m_dct_filter_power << ")\n";
-        }
-        return m_dct_filter_power > 0;
-    }
+    bool use_jpeg_output() const { return m_dct_filter_power > 0; }
 
     void decode_block(Component & component, unsigned char * out)
     {
@@ -764,8 +609,7 @@ struct Decoder
         block[0] = component.m_last_dc + dc_difference;
 
         static std::array<int, 64> encoder_part_input;
-        if (use_jpeg_output())
-        {
+        if (use_jpeg_output()) {
             encoder_part_input.fill(0);
             encoder_part_input[0] = block[0];
         }
@@ -792,13 +636,10 @@ struct Decoder
         }
 
         if (use_jpeg_output()) {
-            DCTCoefficientsFilter(m_dct_filter_power).apply(encoder_part_input.data());
+            DCTCoefficientsFilter(m_dct_filter_power)
+                    .apply(encoder_part_input.data());
             encode_by_huffman(
-                    encoder_part_input.data(),
-                    component.m_last_dc,
-                    m_huffman_encoding_tables[component.m_dc_huffman_table_id],
-                    m_huffman_encoding_tables[component.m_ac_huffman_table_id],
-                    m_jpeg_output);
+                    encoder_part_input.data(), component.m_last_dc, m_huffman_encoding_tables[component.m_dc_huffman_table_id], m_huffman_encoding_tables[component.m_ac_huffman_table_id], m_jpeg_output);
         }
 
         component.m_last_dc += dc_difference;
@@ -810,12 +651,7 @@ struct Decoder
         }
 
         // Inverse DCT
-        for (int i = 0; i < 64; i += 8) {
-            inversed_discrete_cosine_transform_by_rows(&block[i]);
-        }
-        for (int i = 0; i < 8; ++i) {
-            inversed_discrete_cosine_transform_by_columns(&block[i], &out[i], component.m_stride);
-        }
+        utils::DiscreteCosineTransform::inverse(block, component.m_stride, out);
     }
 
     void decode_scan(void)
@@ -847,7 +683,11 @@ struct Decoder
             for (auto & component : m_components) {
                 for (sby = 0; sby < component.m_ssy; ++sby) {
                     for (sbx = 0; sbx < component.m_ssx; ++sbx) {
-                        decode_block(component, &component.m_pixels[((mby * component.m_ssy + sby) * component.m_stride + mbx * component.m_ssx + sbx) << 3]);
+                        decode_block(component,
+                                     &component.m_pixels[((mby * component.m_ssy + sby) *
+                                                                  component.m_stride +
+                                                          mbx * component.m_ssx + sbx)
+                                                         << 3]);
                         check_error();
                     }
                 }
@@ -900,7 +740,7 @@ struct Decoder
     {
         const int xmax = component.m_width - 3;
         unsigned char *lin, *lout;
-        std::vector<unsigned char> out((component.m_width * component.m_height) << 1);
+        BytesList out((component.m_width * component.m_height) << 1);
         lin = component.m_pixels.data();
         lout = out.data();
         for (int y = component.m_height; y; --y) {
@@ -908,8 +748,10 @@ struct Decoder
             lout[1] = CF(CF3X * lin[0] + CF3Y * lin[1] + CF3Z * lin[2]);
             lout[2] = CF(CF3A * lin[0] + CF3B * lin[1] + CF3C * lin[2]);
             for (int x = 0; x < xmax; ++x) {
-                lout[(x << 1) + 3] = CF(CF4A * lin[x] + CF4B * lin[x + 1] + CF4C * lin[x + 2] + CF4D * lin[x + 3]);
-                lout[(x << 1) + 4] = CF(CF4D * lin[x] + CF4C * lin[x + 1] + CF4B * lin[x + 2] + CF4A * lin[x + 3]);
+                lout[(x << 1) + 3] = CF(CF4A * lin[x] + CF4B * lin[x + 1] +
+                                        CF4C * lin[x + 2] + CF4D * lin[x + 3]);
+                lout[(x << 1) + 4] = CF(CF4D * lin[x] + CF4C * lin[x + 1] +
+                                        CF4B * lin[x + 2] + CF4A * lin[x + 3]);
             }
             lin += component.m_stride;
             lout += component.m_width << 1;
@@ -927,7 +769,7 @@ struct Decoder
         const int w = c.m_width, s1 = c.m_stride, s2 = s1 + s1;
         unsigned char *cin, *cout;
         int x, y;
-        std::vector<unsigned char> out((c.m_width * c.m_height) << 1);
+        BytesList out((c.m_width * c.m_height) << 1);
         for (x = 0; x < w; ++x) {
             cin = &c.m_pixels[x];
             cout = &out[x];
@@ -939,9 +781,11 @@ struct Decoder
             cout += w;
             cin += s1;
             for (y = c.m_height - 3; y; --y) {
-                *cout = CF(CF4A * cin[-s1] + CF4B * cin[0] + CF4C * cin[s1] + CF4D * cin[s2]);
+                *cout = CF(CF4A * cin[-s1] + CF4B * cin[0] + CF4C * cin[s1] +
+                           CF4D * cin[s2]);
                 cout += w;
-                *cout = CF(CF4D * cin[-s1] + CF4C * cin[0] + CF4B * cin[s1] + CF4A * cin[s2]);
+                *cout = CF(CF4D * cin[-s1] + CF4C * cin[0] + CF4B * cin[s1] +
+                           CF4A * cin[s2]);
                 cout += w;
                 cin += s1;
             }
@@ -1034,7 +878,7 @@ struct Decoder
             unsigned char * pout = &m_components[0].m_pixels[m_components[0].m_width];
             int y;
             for (y = m_components[0].m_height - 1; y; --y) {
-                njCopyMem(pout, pin, m_components[0].m_width);
+                std::memcpy(pout, pin, m_components[0].m_width);
                 pin += m_components[0].m_stride;
                 pout += m_components[0].m_width;
             }
@@ -1042,17 +886,13 @@ struct Decoder
         }
     }
 
-    void initialize(void)
+    void reset(void)
     {
-        njFillMem(this, 0, sizeof(Decoder));
+        Decoder decoder{};
+        std::swap(*this, decoder);
     }
 
-    void njDone(void)
-    {
-        initialize();
-    }
-
-    DecodingResult decode(const std::vector<unsigned char>& jpeg)
+    DecodingResult decode(const BytesList & jpeg)
     {
         m_position = jpeg.data();
         this->m_size = jpeg.size() & 0x7FFFFFFF;
@@ -1066,14 +906,27 @@ struct Decoder
                 return DecodingResult::SYNTAX_ERROR;
             skip(2);
             switch (m_position[-1]) {
-            case 0xC0: decode_start_of_scan(); break;  // Начало кадра: высота и ширина рисунков, количество каналов,
-                                                       // идентификаторы и данные о прореживании каналов, идентификаторы таблиц квантований
-            case 0xC4: decode_huffman_tables(); break; // Определение таблицы Хаффмана
-            case 0xDB: decode_quantize_table(); break; // Определение таблицы квантования
-            case 0xDD: njDecodeDRI(); break;           // Определение интервала перезапуска
-            case 0xDA: decode_scan(); break;           // Начало сканирования: Количество каналов, идентификаторы таблиц Хаффмана
-                                                       // для DC и AC коэффициентов
-            case 0xFE: skip_marker(); break;           // Комментарий
+            case 0xC0:
+                decode_start_of_scan();
+                break; // Начало кадра: высота и ширина рисунков, количество каналов,
+                       // идентификаторы и данные о прореживании каналов, идентификаторы
+                       // таблиц квантований
+            case 0xC4:
+                decode_huffman_tables();
+                break; // Определение таблицы Хаффмана
+            case 0xDB:
+                decode_quantize_table();
+                break; // Определение таблицы квантования
+            case 0xDD:
+                njDecodeDRI();
+                break; // Определение интервала перезапуска
+            case 0xDA:
+                decode_scan();
+                break; // Начало сканирования: Количество каналов, идентификаторы таблиц
+                       // Хаффмана для DC и AC коэффициентов
+            case 0xFE:
+                skip_marker();
+                break; // Комментарий
             default:
                 if ((m_position[-1] & 0xF0) == 0xE0)
                     skip_marker();
@@ -1091,7 +944,10 @@ struct Decoder
     int get_width(void) { return m_width; }
     int get_height(void) { return m_height; }
     int is_color_image(void) { return (m_components_count != 1); }
-    const std::vector<unsigned char> & get_image(void) { return (m_components_count == 1) ? m_components.front().m_pixels : rgb; }
+    const BytesList & get_image(void)
+    {
+        return (m_components_count == 1) ? m_components.front().m_pixels : rgb;
+    }
     int get_image_size(void) { return m_width * m_height * m_components_count; }
     const Output & get_jpeg_output(void) { return m_jpeg_output; }
 };
@@ -1102,7 +958,7 @@ class CommandLineArguments
 {
 public:
     CommandLineArguments(int argc, const char * argv[])
-        :m_is_valid(validate(argc, argv))
+        : m_is_valid(validate(argc, argv))
         , m_input_file_name(argv[1])
         , m_output_file_name(argv[2])
         , m_dct_filter_power(argc > 3 ? to_size_t(argv[3]) : 0)
@@ -1111,31 +967,16 @@ public:
         validate();
     }
 
-    bool is_valid() const
-    {
-        return m_is_valid;
-    }
+    bool is_valid() const { return m_is_valid; }
 
-    const std::string & get_input_file_name() const
-    {
-        return m_input_file_name;
-    }
-    const std::string & get_output_file_name() const
-    {
-        return m_output_file_name;
-    }
+    const std::string & get_input_file_name() const { return m_input_file_name; }
+    const std::string & get_output_file_name() const { return m_output_file_name; }
 
-    bool use_dct_filter() const
-    {
-        return m_dct_filter_power > 0;
-    }
+    bool use_dct_filter() const { return m_dct_filter_power > 0; }
 
-    std::size_t get_dct_filter_power() const
-    {
-        return m_dct_filter_power;
-    }
+    std::size_t get_dct_filter_power() const { return m_dct_filter_power; }
 
-    const std::string& get_jpeg_output_file_name() const
+    const std::string & get_jpeg_output_file_name() const
     {
         return m_jpeg_output_file_name;
     }
@@ -1158,7 +999,10 @@ private:
     {
         if (argc != 3 && argc != 5) {
             std::string app_name{argv[0]};
-            throw std::invalid_argument("Usage: " + app_name + " <input_file> <output_file> [<dct_filter_power> <m_jpeg_output_file_name>]");
+            throw std::invalid_argument(
+                    "Usage: " + app_name +
+                    " <input_file> <output_file> [<dct_filter_power> "
+                    "<m_jpeg_output_file_name>]");
         }
         return true;
     }
@@ -1171,7 +1015,8 @@ private:
     const std::string m_jpeg_output_file_name;
 };
 
-std::size_t size_of(std::ifstream& file) {
+std::size_t size_of(std::ifstream & file)
+{
     file.seekg(0, std::ios::end);
     const auto size = file.tellg();
     file.seekg(0, std::ios::beg);
@@ -1182,18 +1027,19 @@ int main(const int argc, const char * argv[])
 {
     CommandLineArguments args{argc, argv};
 
-    std::ifstream file(args.get_input_file_name(), std::ios::binary);
+    auto & input_file_name = args.get_input_file_name();
+    std::ifstream file(input_file_name, std::ios::binary);
     if (!file.is_open()) {
-        std::cout << "Error opening the input file.\n";
+        std::cerr << "Cannot open input file: " << input_file_name << '\n';
         return 1;
     }
 
     const auto size = size_of(file);
 
-    std::vector<unsigned char> buffer(size);
+    BytesList buffer(size);
     if (!file.read(reinterpret_cast<char *>(buffer.data()), size)) {
-        std::cout << "Error reading the input file.\n";
-        return 1;
+        std::cerr << "Cannot read data from file: " << input_file_name << '\n';
+        return 2;
     }
     file.close();
 
@@ -1201,29 +1047,47 @@ int main(const int argc, const char * argv[])
     if (args.use_dct_filter()) {
         decoder.set_dct_filter(args.get_dct_filter_power());
     }
-    std::cout << "decoder.m_dct_filter_power=" << decoder.m_dct_filter_power << '\n';
-    if (decoder.decode(buffer) != DecodingResult::OK) {
-        std::cout << "Error decoding the input file.\n";
-        return 1;
-    }
-    std::cout << "Successful!\n";
 
-    std::ofstream output(args.get_output_file_name(), std::ios::binary);
+    const auto decoding_result = decoder.decode(buffer);
+    switch (decoding_result) {
+    case DecodingResult::__FINISHED: // unexpected result of decoding
+    case DecodingResult::INTERNAL_ERROR:
+        std::cerr
+                << "An internal application error occurred while decoding the file "
+                << input_file_name << ".\n";
+        return 3;
+    case DecodingResult::SYNTAX_ERROR:
+        std::cerr << "A syntax error was found in the file " << input_file_name
+                  << ".\n";
+        return 4;
+    case DecodingResult::NO_JPEG:
+        std::cerr << "The file " << input_file_name << " it is not a JPEG.\n";
+        return 5;
+    case DecodingResult::UNSUPPORTED:
+        std::cerr << "File format " << input_file_name << " not supported.\n";
+        return 6;
+    case DecodingResult::OK:
+        break;
+    }
+
+    auto & output_file_name = args.get_output_file_name();
+    std::ofstream output(output_file_name, std::ios::binary);
     if (!output.is_open()) {
-        std::cout << "Error opening the output file.\n";
-        return 1;
+        std::cout << "Error opening the output file:" << output_file_name << '\n';
+        return 7;
     }
 
     output << "P" << (decoder.is_color_image() ? 6 : 5) << "\n"
            << decoder.get_width() << " " << decoder.get_height() << "\n255\n";
-    output.write(reinterpret_cast<const char *>(decoder.get_image().data()), decoder.get_image_size());
+    output.write(reinterpret_cast<const char *>(decoder.get_image().data()),
+                 decoder.get_image_size());
     output.close();
 
     if (args.use_dct_filter()) {
         decoder.get_jpeg_output().to_file(args.get_jpeg_output_file_name());
     }
 
-    decoder.njDone();
+    decoder.reset();
 
     return 0;
 }

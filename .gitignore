@@ -1,8 +1,16 @@
-# The C and C++ build directory
+# The C and C++ build directory and files
 bin
+build
+Decoder
 
 # A folder with images for decoding
 images
 
 # A folder with decoding output
 out
+
+# CMake temporary files
+CMakeLists.txt.user
+
+# macOS filesystem
+.DS_Store

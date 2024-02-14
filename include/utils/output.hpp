@@ -1,9 +1,8 @@
 #pragma once
 
+#include <utils/bytes.hpp>
+#include <utils/huffman_code.hpp>
 #include <vector>
-
-template <std::size_t BytesCount>
-using Bytes = std::array<unsigned char, BytesCount>;
 
 class Output
 {
@@ -15,8 +14,10 @@ public:
     const std::vector<unsigned char> & get() const;
 
     void write(const unsigned short bits[]);
+    void write(const utils::HuffmanCode::Entry & entry);
 
     Output & operator<<(const unsigned short bits[]);
+    Output & operator<<(const utils::HuffmanCode::Entry & entry);
 
     template <std::size_t BytesCount>
     Output & operator<<(const Bytes<BytesCount> & bytes)

@@ -1,3 +1,7 @@
+/**
+ * @file command_line_arguments.hpp
+ * @author IPodtsepko
+ */
 #pragma once
 
 #include <string>

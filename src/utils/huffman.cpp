@@ -42,14 +42,16 @@ int encode_by_huffman(const int * DU, const int last_dc, const unsigned short dc
     }
     ++trailling_zeros_position;
 
-    const unsigned short EOB[2] = {ac_huffman_table[0x00][0], ac_huffman_table[0x00][1]};
+    const unsigned short EOB[2] = {ac_huffman_table[0x00][0],
+                                   ac_huffman_table[0x00][1]};
     if (trailling_zeros_position == 1) {
         // Все коэффициенты равны нулю
         output << EOB;
         return actual_dc;
     }
 
-    const unsigned short M16zeroes[2] = {ac_huffman_table[0xF0][0], ac_huffman_table[0xF0][1]};
+    const unsigned short M16zeroes[2] = {ac_huffman_table[0xF0][0],
+                                         ac_huffman_table[0xF0][1]};
     for (std::size_t i = 1; i < trailling_zeros_position; ++i) {
         // Рассчитываем длину блока из нулей
         auto start_position = i;
